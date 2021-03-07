@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wwstation.messagecenter.mapper.BasicConfigMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.wwstation.messagecenter.model.po.BasicConfig">
+        <id column="id" property="id" />
+        <result column="name_server_addr" property="nameServerAddr" />
+        <result column="access_key" property="accessKey" />
+        <result column="secret_key" property="secretKey" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, name_server_addr, access_key, secret_key
+    </sql>
+
+</mapper>

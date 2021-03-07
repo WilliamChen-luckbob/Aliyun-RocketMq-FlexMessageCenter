@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.wwstation.messagecenter.mapper.ConsumerConfigMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="com.wwstation.messagecenter.model.po.ConsumerConfig">
+        <id column="id" property="id" />
+        <result column="consumer_name" property="consumerName" />
+        <result column="description" property="description" />
+        <result column="topic" property="topic" />
+        <result column="instance_id" property="instanceId" />
+        <result column="group_id" property="groupId" />
+        <result column="tag" property="tag" />
+        <result column="module_name" property="moduleName" />
+        <result column="process_url" property="processUrl" />
+        <result column="is_inner_processor" property="isInnerProcessor" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, consumer_name, description, topic, instance_id, group_id, tag, module_name, process_url, is_inner_processor
+    </sql>
+
+</mapper>

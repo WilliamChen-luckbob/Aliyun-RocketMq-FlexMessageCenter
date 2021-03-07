@@ -1,0 +1,30 @@
+server:
+  port: 8007
+eureka:
+  client:
+    service-url:
+      defaultZone: http://127.0.0.1:8000/eureka
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://192.168.2.100:3306/web_message_center?characterEncoding=utf-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    username: root
+    password: williamworkstation
+    validation-query: SELECT 1
+    test-on-borrow: true
+    test-while-idle: true
+    time-between-eviction-runs-millis: 3600000
+
+mybatis-plus:
+  mapper-locations: classpath:/com/wwstation/messagecenter/model/mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    #打印sql语句
+#    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+rocketmq:
+  accessKey: 你的RocketMQ accessKey
+  secretKey: 你的RocketMQ secretKey
+  nameSrvAddr: 接入点的公网http地址
+  instanceId: 接入点的MQ实例ID
