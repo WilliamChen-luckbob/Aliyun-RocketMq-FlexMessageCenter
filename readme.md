@@ -1,5 +1,7 @@
 # 阿里云RocketMQ HTTP SDK 生产与消费动态管理解决方案
 
+目前已经支持基本的生产消费，并自己实现了异常重试和死信的功能，自己在开发中运行尚可，如果本项目有帮到你，欢迎大fork和给星。
+
 ## 项目地址：
 
 https://github.com/WilliamChen-luckbob/Aliyun-RocketMq-FlexMessageCenter
