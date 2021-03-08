@@ -1,6 +1,6 @@
 package com.wwstation.messagecenter.service;
 
-import com.wwstation.messagecenter.model.po.BasicConfig;
+import com.wwstation.messagecenter.model.po.DeadMessage;
 import com.baomidou.mybatisplus.extension.service.IService;
 
 /**
@@ -11,6 +11,6 @@ import com.baomidou.mybatisplus.extension.service.IService;
  * @author william
  * @since 2021-03-08
  */
-public interface MPBasicConfigService extends IService<BasicConfig> {
+public interface MPDeadMessageService extends IService<DeadMessage> {
 
 }

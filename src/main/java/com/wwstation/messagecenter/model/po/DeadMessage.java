@@ -3,6 +3,7 @@ package com.wwstation.messagecenter.model.po;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.extension.activerecord.Model;
 import com.baomidou.mybatisplus.annotation.TableId;
+import java.time.LocalDateTime;
 import java.io.Serializable;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
@@ -19,19 +20,23 @@ import lombok.EqualsAndHashCode;
  */
 @Data
   @EqualsAndHashCode(callSuper = false)
-    @ApiModel(value="BasicConfig对象", description="")
-public class BasicConfig extends Model<BasicConfig> {
+    @ApiModel(value="DeadMessage对象", description="")
+public class DeadMessage extends Model<DeadMessage> {
 
     private static final long serialVersionUID = 1L;
 
       @TableId(value = "id", type = IdType.AUTO)
       private Long id;
 
-    private String nameServerAddr;
+    private String mqId;
 
-    private String accessKey;
+    private Long consumerConfigId;
 
-    private String secretKey;
+      @ApiModelProperty(value = "消息内容JSON String")
+      private String message;
+
+      @ApiModelProperty(value = "送入死信表的时间")
+      private LocalDateTime deadTime;
 
 
     @Override

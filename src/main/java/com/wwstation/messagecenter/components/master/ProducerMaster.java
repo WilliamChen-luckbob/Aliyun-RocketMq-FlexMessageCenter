@@ -48,25 +48,25 @@ public class ProducerMaster {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        }, "producer master 线程启动").start();
+        }, "producerMaster").start();
     }
 
     private void run() throws Exception {
         //todo 目前基础配置写死，后期也要进行代码刷新
         BasicConfig basicConfig = config.getBasicConfig();
         MQClient mqClient = new MQClient(basicConfig.getNameServerAddr(),
-            basicConfig.getAccessKey(),
-            basicConfig.getSecretKey());
+                basicConfig.getAccessKey(),
+                basicConfig.getSecretKey());
 
         while (true) {
             List<ProducerConfig> producerConfig = config.getProducerConfig();
             try {
                 //判定配置中是否已经有数据不在存活的worker中，如有则需要剔除
                 List<String> newProducerNames = producerConfig.stream()
-                    .map(e -> e.getTopic() + "+" + e.getInstanceId())
-                    .collect(Collectors.toList());
+                        .map(e -> e.getTopic() + "+" + e.getInstanceId())
+                        .collect(Collectors.toList());
                 List<String> producers2Kill = aliveProducer.keySet().stream()
-                    .filter(e -> !newProducerNames.contains(e)).collect(Collectors.toList());
+                        .filter(e -> !newProducerNames.contains(e)).collect(Collectors.toList());
                 if (CollectionUtil.isNotEmpty(producers2Kill)) {
                     for (String producerName : producers2Kill) {
                         MQProducer producer = aliveProducer.get(producerName);
@@ -126,19 +126,18 @@ public class ProducerMaster {
             MQProducer producer = aliveProducer.get(producerName);
             TopicMessage topicMessage = producer.publishMessage(msg);
             log.info("消息发送成功！messageId={},messagebody={}",
-                topicMessage.getMessageId(),
-                topicMessage.getMessageBodyString());
+                    topicMessage.getMessageId(),
+                    topicMessage.getMessageBodyString());
             return true;
         } catch (Exception e) {
             e.printStackTrace();
             log.error(String.format(
-                "消息发送失败：未知错误！topic=%s，tag=%s，key=%s，msg=%s",
-                topic,
-                tag,
-                key,
-                dataJson));
+                    "消息发送失败：未知错误！topic=%s，tag=%s，key=%s，msg=%s",
+                    topic,
+                    tag,
+                    key,
+                    dataJson));
         }
         return false;
     }
-
 }

@@ -6,6 +6,7 @@ import com.wwstation.messagecenter.components.config.MessageConfig;
 import com.wwstation.messagecenter.components.worker.ConsumerWorker;
 import com.wwstation.messagecenter.model.po.BasicConfig;
 import com.wwstation.messagecenter.model.po.ConsumerConfig;
+import com.wwstation.messagecenter.service.MPFailedMessageService;
 import com.wwstation.messagecenter.utils.HttpUtils4LoadBalancer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,10 +41,11 @@ public class ConsumerMaster {
     @Autowired
     @Qualifier(value = "BalancedRestTemplate")
     private RestTemplate balancedRestTemplate;
-
     @Autowired
     @Qualifier(value = "RestTemplate")
     private RestTemplate restTemplate;
+    @Autowired
+    MPFailedMessageService failedMessageService;
 
     //存活的服务
     private Set<String> aliveServiceInstances;
@@ -103,7 +105,8 @@ public class ConsumerMaster {
                                         httpUtil,
                                         currentConsumerConfig.getIsInnerProcessor() ? balancedRestTemplate : restTemplate,
                                         mqClient,
-                                        currentConsumerConfig);
+                                        currentConsumerConfig,
+                                        failedMessageService);
                                 Thread thread = new Thread(consumerWorker, consumerName);
                                 aliveConsumerWorkers.put(consumerName, thread);
                                 thread.start();
@@ -142,6 +145,5 @@ public class ConsumerMaster {
                 TimeUnit.SECONDS.sleep(5);
             }
         }
-
     }
 }

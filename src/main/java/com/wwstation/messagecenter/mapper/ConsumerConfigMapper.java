@@ -9,7 +9,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * </p>
  *
  * @author william
- * @since 2021-03-07
+ * @since 2021-03-08
  */
 public interface ConsumerConfigMapper extends BaseMapper<ConsumerConfig> {
 

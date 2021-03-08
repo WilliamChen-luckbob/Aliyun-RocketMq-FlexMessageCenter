@@ -9,7 +9,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
  * </p>
  *
  * @author william
- * @since 2021-03-07
+ * @since 2021-03-08
  */
 public interface MPConsumerConfigService extends IService<ConsumerConfig> {
 

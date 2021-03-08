@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.wwstation.messagecenter.mapper.FailedMessageMapper">
+<mapper namespace="com.wwstation.messagecenter.mapper.DeadMessageMapper">
 
     <!-- 通用查询映射结果 -->
-    <resultMap id="BaseResultMap" type="com.wwstation.messagecenter.model.po.FailedMessage">
+    <resultMap id="BaseResultMap" type="com.wwstation.messagecenter.model.po.DeadMessage">
         <id column="id" property="id" />
         <result column="mq_id" property="mqId" />
         <result column="consumer_config_id" property="consumerConfigId" />
         <result column="message" property="message" />
-        <result column="create_time" property="createTime" />
-        <result column="retry_times" property="retryTimes" />
-        <result column="next_retry_time" property="nextRetryTime" />
+        <result column="dead_time" property="deadTime" />
     </resultMap>
 
     <!-- 通用查询结果列 -->
     <sql id="Base_Column_List">
-        id, mq_id, consumer_config_id, message, create_time, retry_times, next_retry_time
+        id, mq_id, consumer_config_id, message, dead_time
     </sql>
 
 </mapper>

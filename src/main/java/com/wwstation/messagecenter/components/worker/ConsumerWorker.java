@@ -8,12 +8,16 @@ import com.aliyun.mq.http.common.AckMessageException;
 import com.aliyun.mq.http.model.Message;
 import com.wwstation.messagecenter.model.bo.HttpBean;
 import com.wwstation.messagecenter.model.po.ConsumerConfig;
+import com.wwstation.messagecenter.model.po.FailedMessage;
+import com.wwstation.messagecenter.service.MPFailedMessageService;
 import com.wwstation.messagecenter.utils.FeedBackUtils;
 import com.wwstation.messagecenter.utils.HttpUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.openfeign.support.FeignUtils;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -40,11 +44,14 @@ public class ConsumerWorker implements Runnable {
     private String moduleName;
     private String url;
     private Boolean isInnerProcessor;
+    private Long configId;
+    private MPFailedMessageService failedMessageService;
 
     public ConsumerWorker(HttpUtils httpUtil,
                           RestTemplate restTemplate,
                           MQClient mqClient,
-                          ConsumerConfig config) {
+                          ConsumerConfig config,
+                          MPFailedMessageService failedMessageService) {
         this.restTemplate = restTemplate;
         this.httpUtil = httpUtil;
         this.mqClient = mqClient;
@@ -55,6 +62,8 @@ public class ConsumerWorker implements Runnable {
         this.moduleName = config.getModuleName();
         this.url = config.getProcessUrl();
         this.isInnerProcessor = config.getIsInnerProcessor();
+        this.failedMessageService = failedMessageService;
+        this.configId = config.getId();
     }
 
     @Override
@@ -118,6 +127,16 @@ public class ConsumerWorker implements Runnable {
                     log.error("{}消费者消费失败，消息ID={}", threadName, message.getMessageId());
                     log.error(FeedBackUtils.getResultFromError(e.getLocalizedMessage()));
                     log.info(JSONObject.toJSONString(message));
+
+                    LocalDateTime now = LocalDateTime.now();
+                    FailedMessage failedMessage = new FailedMessage();
+                    failedMessage.setMqId(message.getMessageId());
+                    failedMessage.setConsumerConfigId(configId);
+                    failedMessage.setRetryTimes(0);
+                    failedMessage.setCreateTime(now);
+                    failedMessage.setMessage(message.getMessageBodyString());
+                    failedMessage.setNextRetryTime(now.plusSeconds(12L));
+                    failedMessageService.save(failedMessage);
                 } finally {
                     //所有的消息均要置为消费成功
                     handles.add(message.getReceiptHandle());
@@ -156,6 +175,5 @@ public class ConsumerWorker implements Runnable {
             }
         }
         log.info("线程{}被优雅的停止了", threadName);
-
     }
 }

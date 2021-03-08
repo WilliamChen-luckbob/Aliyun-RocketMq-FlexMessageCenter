@@ -16,7 +16,7 @@ import lombok.EqualsAndHashCode;
  * </p>
  *
  * @author william
- * @since 2021-03-07
+ * @since 2021-03-08
  */
 @Data
   @EqualsAndHashCode(callSuper = false)
@@ -31,10 +31,20 @@ public class FailedMessage extends Model<FailedMessage> {
       @ApiModelProperty(value = "rocketMQID")
       private String mqId;
 
+      @ApiModelProperty(value = "consumer_config表id")
+      private Long consumerConfigId;
+
       @ApiModelProperty(value = "消息内容json")
       private String message;
 
-    private LocalDateTime createTime;
+      @ApiModelProperty(value = "创建时间")
+      private LocalDateTime createTime;
+
+      @ApiModelProperty(value = "重试次数")
+      private Integer retryTimes;
+
+      @ApiModelProperty(value = "下一次预计启动时间")
+      private LocalDateTime nextRetryTime;
 
 
     @Override

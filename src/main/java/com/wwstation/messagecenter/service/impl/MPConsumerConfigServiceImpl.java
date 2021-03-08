@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
  * </p>
  *
  * @author william
- * @since 2021-03-07
+ * @since 2021-03-08
  */
 @Service
 public class MPConsumerConfigServiceImpl extends ServiceImpl<ConsumerConfigMapper, ConsumerConfig> implements MPConsumerConfigService {

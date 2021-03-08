@@ -39,6 +39,7 @@ public class MysqlGenerator4WebMsgCenter {
             shell(model, "basic_config");//日志的收集统一放进了resource中做(因为使用了APO织入业务逻辑，有强依赖)
             shell(model, "consumer_config");
             shell(model, "failed_message");
+            shell(model,"dead_message");
         }
     }
 

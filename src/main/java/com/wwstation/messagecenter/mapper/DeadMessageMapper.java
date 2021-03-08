@@ -1,6 +1,6 @@
 package com.wwstation.messagecenter.mapper;
 
-import com.wwstation.messagecenter.model.po.FailedMessage;
+import com.wwstation.messagecenter.model.po.DeadMessage;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**
@@ -11,6 +11,6 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
  * @author william
  * @since 2021-03-08
  */
-public interface FailedMessageMapper extends BaseMapper<FailedMessage> {
+public interface DeadMessageMapper extends BaseMapper<DeadMessage> {
 
 }
