@@ -9,6 +9,7 @@ import com.wwstation.messagecenter.model.po.BasicConfig;
 import com.wwstation.messagecenter.model.po.ConsumerConfig;
 import com.wwstation.messagecenter.service.MPFailedMessageService;
 import com.wwstation.messagecenter.utils.HttpUtils4LoadBalancer;
+import javafx.application.Application;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -55,6 +56,8 @@ public class ConsumerMaster {
     //存活的消费者对应的配置（用于比对是否出现更改）
     private Map<String, ConsumerConfig> aliveConsumerConfigs;
     private MQClient mqClient;
+    //master轮询处理失败次数，在一定次数后将停止轮询，直到后端开发排查完毕修复重启
+    private Integer failedRetryTimes;
 
     @PostConstruct
     public void initialize() throws Exception {
@@ -72,10 +75,10 @@ public class ConsumerMaster {
         //todo 目前基础配置写死，后期也要进行代码刷新
         BasicConfig basicConfig = config.getBasicConfig();
 
+        //一些初始化
         mqClient = new MQClient(basicConfig.getNameServerAddr(),
             basicConfig.getAccessKey(),
             basicConfig.getSecretKey());
-
         if (aliveServiceInstances == null) {
             aliveServiceInstances = new HashSet<>();
         }
@@ -85,8 +88,10 @@ public class ConsumerMaster {
         if (aliveConsumerConfigs == null) {
             aliveConsumerConfigs = new HashMap<>();
         }
+        failedRetryTimes = 0;
 
-        while (true) {
+        //开始长轮询监听
+        while (failedRetryTimes <= 20) {
             Map<String, ConsumerConfig> consumerConfig = config.getConsumerConfig();
             try {
                 //遍历配置，依次尝试启动消费线程
@@ -121,11 +126,23 @@ public class ConsumerMaster {
                         }
                     }
                 }
+                failedRetryTimes = 0;
             } catch (Exception e) {
+                log.error("consumer master 在长轮询时出现了不能处理的异常，consumer master 正在重试");
                 e.printStackTrace();
+                failedRetryTimes += 1;
             } finally {
                 //轮询间隔
                 TimeUnit.SECONDS.sleep(5);
+            }
+        }
+        masterShutDown();
+    }
+
+    private void masterShutDown() {
+        if (CollectionUtil.isNotEmpty(aliveConsumerWorkers)){
+            for (Thread worker : aliveConsumerWorkers.values()) {
+                worker.interrupt();
             }
         }
     }
