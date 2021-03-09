@@ -1,6 +1,7 @@
 package com.wwstation.messagecenter.components.master;
 
 import cn.hutool.core.collection.CollectionUtil;
+import com.alibaba.fastjson.JSONObject;
 import com.aliyun.mq.http.MQClient;
 import com.wwstation.messagecenter.components.config.MessageConfig;
 import com.wwstation.messagecenter.components.worker.ConsumerWorker;
@@ -51,6 +52,9 @@ public class ConsumerMaster {
     private Set<String> aliveServiceInstances;
     //存活的消费者
     private Map<String, Thread> aliveConsumerWorkers;
+    //存活的消费者对应的配置（用于比对是否出现更改）
+    private Map<String, ConsumerConfig> aliveConsumerConfigs;
+    private MQClient mqClient;
 
     @PostConstruct
     public void initialize() throws Exception {
@@ -68,15 +72,18 @@ public class ConsumerMaster {
         //todo 目前基础配置写死，后期也要进行代码刷新
         BasicConfig basicConfig = config.getBasicConfig();
 
-        MQClient mqClient = new MQClient(basicConfig.getNameServerAddr(),
-                basicConfig.getAccessKey(),
-                basicConfig.getSecretKey());
+        mqClient = new MQClient(basicConfig.getNameServerAddr(),
+            basicConfig.getAccessKey(),
+            basicConfig.getSecretKey());
 
         if (aliveServiceInstances == null) {
             aliveServiceInstances = new HashSet<>();
         }
         if (aliveConsumerWorkers == null) {
             aliveConsumerWorkers = new HashMap<>();
+        }
+        if (aliveConsumerConfigs == null) {
+            aliveConsumerConfigs = new HashMap<>();
         }
 
         while (true) {
@@ -91,52 +98,28 @@ public class ConsumerMaster {
                     String consumerName = currentConsumerConfig.getConsumerName();
                     String configuredEurekaServiceName = currentConsumerConfig.getModuleName();
 
-                    //判断当前配置所需的消费服务是否存活
-                    if (!aliveServiceInstances.contains(configuredEurekaServiceName)) {
-                        //如果存活服务没有记录，尝试查询注册中心
-                        List<ServiceInstance> instances = discoveryClient.getInstances(configuredEurekaServiceName);
-                        if (CollectionUtil.isNotEmpty(instances)) {
-                            //注册中心查出，存活服务添加
+                    //1. 查询存活服务实例列表是否存在指定的服务
+                    if (aliveServiceInstances.contains(configuredEurekaServiceName)) {
+                        //1.1 若存在，说明前面已经有过消息使用了相同的服务实例，已经加载
+                        //1.1.1 尝试修改或新建消费者线程
+                        processConsumer(consumerName, currentConsumerConfig);
+                    } else {
+                        //1.2 若不存在，说明前面没有消息使用过这个服务实例，没有加载过，从注册中心尝试查询
+                        if (discoveryClient.getInstances(configuredEurekaServiceName).size() >= 0) {
+                            //1.2.1 注册中心有数据
                             aliveServiceInstances.add(configuredEurekaServiceName);
-
-                            if (!aliveConsumerWorkers.containsKey(consumerName)) {
-                                //消费线程不存在则创建消费线程
-                                ConsumerWorker consumerWorker = new ConsumerWorker(
-                                        httpUtil,
-                                        currentConsumerConfig.getIsInnerProcessor() ? balancedRestTemplate : restTemplate,
-                                        mqClient,
-                                        currentConsumerConfig,
-                                        failedMessageService);
-                                Thread thread = new Thread(consumerWorker, consumerName);
-                                aliveConsumerWorkers.put(consumerName, thread);
-                                thread.start();
-                                log.info("消费线程{}启动", consumerName);
-                            }
-                            continue;
-                        }
-
-                        //不存在实例，直接查看是否有消费线程，有则关闭之
-                        if (aliveConsumerWorkers.containsKey(consumerName)) {
-                            log.info("{}的消费者服务实例{}已经全部下线，尝试关闭此监听线程，以免产生过多的消费失败数据堆积",
+                            //尝试新建或修改对应的消费线程
+                            processConsumer(consumerName, currentConsumerConfig);
+                        } else {
+                            //1.2.2 注册中心没有实例，此消费者不可存活
+                            if (aliveConsumerWorkers.containsKey(consumerName)) {
+                                log.info("{}的消费者服务实例{}已经全部下线或配置被修改，尝试关闭此监听线程，以免产生过多的消费失败数据堆积或消费异常",
                                     consumerName,
                                     configuredEurekaServiceName);
-                            Thread thread = aliveConsumerWorkers.get(consumerName);
-                            thread.interrupt();
-                            while (thread.isAlive()) {
-                                TimeUnit.MILLISECONDS.sleep(20);
+                                deleteConsumer(consumerName);
                             }
-                            aliveConsumerWorkers.remove(consumerName);
                         }
-
-                        continue;
                     }
-
-                    //存活服务匹配且存在实例，查看消费线程是否存在
-
-                    //不存在则创建消费线程
-                    log.info("消费线程启动");
-
-
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -145,5 +128,52 @@ public class ConsumerMaster {
                 TimeUnit.SECONDS.sleep(5);
             }
         }
+    }
+
+    private void processConsumer(String consumerName, ConsumerConfig currentConfig) throws Exception {
+        //在此之前已确保服务实例均存在
+
+        if (aliveConsumerWorkers.containsKey(consumerName)) {
+            //1 如果有存活的消费者，判定是否存在配置数据修改
+            ConsumerConfig existingConfig = aliveConsumerConfigs.get(consumerName);
+            if (!isSameConfig(existingConfig, currentConfig)) {
+                //1.1 存在修改，尝试关闭现存的消费者线程并重新创建新的监听线程
+                log.info("发现DB中的消费者{}配置出现变化，重新启动消费者线程", consumerName);
+                deleteConsumer(consumerName);
+                createNewConsumer(mqClient, currentConfig, consumerName);
+            }
+            return;
+        }
+        //2 如果没有存活的消费者，直接新建
+        createNewConsumer(mqClient, currentConfig, consumerName);
+    }
+
+    private Boolean isSameConfig(ConsumerConfig existingConfig, ConsumerConfig currentConfig) {
+        return JSONObject.toJSONString(existingConfig).equals(JSONObject.toJSONString(currentConfig));
+    }
+
+    private void deleteConsumer(String consumerName) throws InterruptedException {
+        Thread thread = aliveConsumerWorkers.get(consumerName);
+        thread.interrupt();
+        while (thread.isAlive()) {
+            TimeUnit.MILLISECONDS.sleep(20);
+        }
+        aliveConsumerWorkers.remove(consumerName);
+        aliveConsumerConfigs.remove(consumerName);
+    }
+
+    private void createNewConsumer(MQClient mqClient, ConsumerConfig currentConsumerConfig, String consumerName) {
+        //存活消费者列表中不存在这个消费线程则创建消费线程
+        ConsumerWorker consumerWorker = new ConsumerWorker(
+            httpUtil,
+            currentConsumerConfig.getIsInnerProcessor() ? balancedRestTemplate : restTemplate,
+            mqClient,
+            currentConsumerConfig,
+            failedMessageService);
+        Thread thread = new Thread(consumerWorker, consumerName);
+        aliveConsumerWorkers.put(consumerName, thread);
+        aliveConsumerConfigs.put(consumerName, currentConsumerConfig);
+        thread.start();
+        log.info("消费线程{}启动", consumerName);
     }
 }
