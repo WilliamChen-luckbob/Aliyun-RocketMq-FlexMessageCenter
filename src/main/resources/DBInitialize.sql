@@ -1,6 +1,8 @@
 DROP DATABASE IF EXISTS `web_message_center`;
 CREATE DATABASE `web_message_center` CHARACTER SET 'utf8mb4' COLLATE 'utf8mb4_general_ci';
 
+USE `web_message_center`;
+
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
