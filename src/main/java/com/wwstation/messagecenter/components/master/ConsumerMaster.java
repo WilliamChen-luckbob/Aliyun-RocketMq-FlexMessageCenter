@@ -12,6 +12,7 @@ import com.wwstation.messagecenter.service.MPFailedMessageService;
 import com.wwstation.messagecenter.utils.HttpUtils4LoadBalancer;
 import javafx.application.Application;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.SerializationUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.cloud.client.ServiceInstance;
@@ -98,11 +99,14 @@ public class ConsumerMaster {
 
         //开始长轮询监听
         while (failedRetryTimes <= 20) {
-            Map<String, ConsumerConfig> consumerConfig = config.getConsumerConfig();
+            //如果本次循环未结束但是配置刷新会导致ConcurrentModificationException异常
+            //因此每次循环的拉取会从配置中心copy一份副本自己玩
+            HashMap<String, ConsumerConfig> consumerConfig = SerializationUtils.clone((HashMap<String, ConsumerConfig>) config.getConsumerConfig());
             try {
+                aliveServiceInstances.clear();
                 //遍历配置，依次尝试启动消费线程
                 for (Map.Entry<String, ConsumerConfig> entry : consumerConfig.entrySet()) {
-                    aliveServiceInstances.clear();
+
 
                     //配置中的关键信息
                     ConsumerConfig currentConsumerConfig = entry.getValue();

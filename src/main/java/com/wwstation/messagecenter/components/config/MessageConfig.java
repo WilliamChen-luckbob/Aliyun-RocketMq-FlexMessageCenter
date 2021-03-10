@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Configuration;
 
 import javax.annotation.PostConstruct;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,7 +47,7 @@ public class MessageConfig {
     @PostConstruct
     private void refeshConfig() {
         this.producerConfig = new ArrayList<>();
-        this.consumerConfig = new HashedMap();
+        this.consumerConfig = new HashMap<>();
         inRefreshing = new AtomicBoolean(false);
         new Thread(() -> {
             refresh();

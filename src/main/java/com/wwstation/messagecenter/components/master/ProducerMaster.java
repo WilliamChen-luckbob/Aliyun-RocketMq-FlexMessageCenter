@@ -11,10 +11,12 @@ import com.wwstation.messagecenter.model.po.BasicConfig;
 import com.wwstation.messagecenter.model.po.ConsumerConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.SerializationUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,7 +68,7 @@ public class ProducerMaster {
             basicConfig.getSecretKey());
 
         while (true) {
-            List<ProducerConfig> producerConfig = config.getProducerConfig();
+            List<ProducerConfig> producerConfig = SerializationUtils.clone((ArrayList<ProducerConfig>) config.getProducerConfig());
             try {
                 //判定配置中是否已经有数据不在存活的worker中，如有则需要剔除
                 List<String> newProducerNames = producerConfig.stream()
