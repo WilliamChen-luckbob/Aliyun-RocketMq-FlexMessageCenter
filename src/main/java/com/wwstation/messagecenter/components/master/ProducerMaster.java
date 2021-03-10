@@ -1,6 +1,7 @@
 package com.wwstation.messagecenter.components.master;
 
 import cn.hutool.core.collection.CollectionUtil;
+import cn.hutool.json.JSONUtil;
 import com.aliyun.mq.http.MQClient;
 import com.aliyun.mq.http.MQProducer;
 import com.aliyun.mq.http.model.TopicMessage;
@@ -52,21 +53,27 @@ public class ProducerMaster {
     }
 
     private void run() throws Exception {
-        //todo 目前基础配置写死，后期也要进行代码刷新
         BasicConfig basicConfig = config.getBasicConfig();
+        //如果基础配置获取失败，轮询直到获取成功
+        //todo 多基础配置的设定暂时不考虑
+        while (basicConfig == null) {
+            log.error("正在等待获取基础配置");
+            TimeUnit.SECONDS.sleep(5);
+            basicConfig = config.getBasicConfig();
+        }
         MQClient mqClient = new MQClient(basicConfig.getNameServerAddr(),
-                basicConfig.getAccessKey(),
-                basicConfig.getSecretKey());
+            basicConfig.getAccessKey(),
+            basicConfig.getSecretKey());
 
         while (true) {
             List<ProducerConfig> producerConfig = config.getProducerConfig();
             try {
                 //判定配置中是否已经有数据不在存活的worker中，如有则需要剔除
                 List<String> newProducerNames = producerConfig.stream()
-                        .map(e -> e.getTopic() + "+" + e.getInstanceId())
-                        .collect(Collectors.toList());
+                    .map(e -> e.getTopic() + "+" + e.getInstanceId())
+                    .collect(Collectors.toList());
                 List<String> producers2Kill = aliveProducer.keySet().stream()
-                        .filter(e -> !newProducerNames.contains(e)).collect(Collectors.toList());
+                    .filter(e -> !newProducerNames.contains(e)).collect(Collectors.toList());
                 if (CollectionUtil.isNotEmpty(producers2Kill)) {
                     for (String producerName : producers2Kill) {
                         MQProducer producer = aliveProducer.get(producerName);
@@ -83,7 +90,7 @@ public class ProducerMaster {
                         //启动对应的生产者
                         MQProducer newProducer = mqClient.getProducer(pConfig.getInstanceId(), pConfig.getTopic());
                         aliveProducer.put(producerName, newProducer);
-                        log.info("生产者{}启动", producerName);
+                        log.info("生产者{}启动,生产者配置为:\n{}", producerName, JSONUtil.toJsonPrettyStr(pConfig));
                     }
                 }
 
@@ -126,17 +133,17 @@ public class ProducerMaster {
             MQProducer producer = aliveProducer.get(producerName);
             TopicMessage topicMessage = producer.publishMessage(msg);
             log.info("消息发送成功！messageId={},messagebody={}",
-                    topicMessage.getMessageId(),
-                    topicMessage.getMessageBodyString());
+                topicMessage.getMessageId(),
+                topicMessage.getMessageBodyString());
             return true;
         } catch (Exception e) {
             e.printStackTrace();
             log.error(String.format(
-                    "消息发送失败：未知错误！topic=%s，tag=%s，key=%s，msg=%s",
-                    topic,
-                    tag,
-                    key,
-                    dataJson));
+                "消息发送失败：未知错误！topic=%s，tag=%s，key=%s，msg=%s",
+                topic,
+                tag,
+                key,
+                dataJson));
         }
         return false;
     }

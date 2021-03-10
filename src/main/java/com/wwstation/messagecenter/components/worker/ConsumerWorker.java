@@ -1,6 +1,7 @@
 package com.wwstation.messagecenter.components.worker;
 
 import cn.hutool.core.collection.CollectionUtil;
+import cn.hutool.json.JSONUtil;
 import com.alibaba.fastjson.JSONObject;
 import com.aliyun.mq.http.MQClient;
 import com.aliyun.mq.http.MQConsumer;
@@ -46,6 +47,7 @@ public class ConsumerWorker implements Runnable {
     private Boolean isInnerProcessor;
     private Long configId;
     private MPFailedMessageService failedMessageService;
+    private ConsumerConfig config;
 
     public ConsumerWorker(HttpUtils httpUtil,
                           RestTemplate restTemplate,
@@ -64,16 +66,20 @@ public class ConsumerWorker implements Runnable {
         this.isInnerProcessor = config.getIsInnerProcessor();
         this.failedMessageService = failedMessageService;
         this.configId = config.getId();
+        this.config=config;
     }
 
     @Override
     public void run() {
         String threadName = Thread.currentThread().getName();
 
+        //用于防止在consume的时候被打断抛出导致线程中断失败
+        Boolean interruptedWhileConsuming = false;
+
         MQConsumer consumer = mqClient.getConsumer(this.mqInstanceId,
-                this.topic,
-                this.groupId,
-                this.tag
+            this.topic,
+            this.groupId,
+            this.tag
         );
 
         while (true) {
@@ -81,27 +87,37 @@ public class ConsumerWorker implements Runnable {
             if (Thread.currentThread().isInterrupted()) {
                 break;
             }
-
             //业务逻辑
-//            log.info("当前线程：{}，正在活跃", threadName);
             List<Message> messages = null;
+
+            interruptedWhileConsuming = false;
+
             try {
                 // 长轮询消费消息
                 // 长轮询表示如果topic没有消息则请求会在服务端挂住3s，3s内如果有消息可以消费则立即返回
                 messages = consumer.consumeMessage(
-                        3,// 一次最多消费3条(最多可设置为16条)
-                        3// 长轮询时间3秒（最多可设置为30秒）
+                    3,// 一次最多消费3条(最多可设置为16条)
+                    3// 长轮询时间3秒（最多可设置为30秒）
                 );
             } catch (Throwable e) {
-                e.printStackTrace();
-                try {
-                    TimeUnit.SECONDS.sleep(2);
-                } catch (InterruptedException e1) {
-                    break;
+                if (e.getMessage().contains("java.lang.InterruptedException")) {
+                    interruptedWhileConsuming = true;
+                } else {
+                    e.printStackTrace();
                 }
             }
             // 没有消息
             if (messages == null || messages.isEmpty()) {
+                try {
+                    //如果在拉取时被终止，这里直接可以停止线程
+                    if (interruptedWhileConsuming) {
+                        break;
+                    }
+                    //此处休息2秒进行下次拉取，如果此时被打断，将允许优雅退出
+                    TimeUnit.SECONDS.sleep(2);
+                } catch (InterruptedException e1) {
+                    break;
+                }
                 continue;
             }
             //待提交的数据
@@ -125,6 +141,7 @@ public class ConsumerWorker implements Runnable {
                 } catch (Exception e) {
                     e.printStackTrace();
                     log.error("{}消费者消费失败，消息ID={}", threadName, message.getMessageId());
+                    log.error("当前请求的服务接口为{}{}", moduleName, url);
                     log.error(FeedBackUtils.getResultFromError(e.getLocalizedMessage()));
                     log.info(JSONObject.toJSONString(message));
 
@@ -157,7 +174,7 @@ public class ConsumerWorker implements Runnable {
                         if (errors.getErrorMessages() != null) {
                             for (String errorHandle : errors.getErrorMessages().keySet()) {
                                 System.out.println("Handle:" + errorHandle + ", ErrorCode:" + errors.getErrorMessages().get(errorHandle).getErrorCode()
-                                        + ", ErrorMsg:" + errors.getErrorMessages().get(errorHandle).getErrorMessage());
+                                    + ", ErrorMsg:" + errors.getErrorMessages().get(errorHandle).getErrorMessage());
                             }
                         }
                         continue;
@@ -174,6 +191,6 @@ public class ConsumerWorker implements Runnable {
                 break;
             }
         }
-        log.info("线程{}被优雅的停止了", threadName);
+        log.info("线程{}被优雅的停止了!消费者配置为:\n{}", threadName, JSONUtil.toJsonPrettyStr(config));
     }
 }

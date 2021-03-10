@@ -1,6 +1,7 @@
 package com.wwstation.messagecenter.components.master;
 
 import cn.hutool.core.collection.CollectionUtil;
+import cn.hutool.json.JSONUtil;
 import com.alibaba.fastjson.JSONObject;
 import com.aliyun.mq.http.MQClient;
 import com.wwstation.messagecenter.components.config.MessageConfig;
@@ -72,9 +73,14 @@ public class ConsumerMaster {
 
     private void run() throws Exception {
         //创建新的消费者客户端
-        //todo 目前基础配置写死，后期也要进行代码刷新
         BasicConfig basicConfig = config.getBasicConfig();
-
+        //如果基础配置获取失败，轮询直到获取成功
+        //todo 多基础配置的设定暂时不考虑
+        while (basicConfig == null) {
+            log.error("正在等待获取基础配置");
+            TimeUnit.SECONDS.sleep(5);
+            basicConfig = config.getBasicConfig();
+        }
         //一些初始化
         mqClient = new MQClient(basicConfig.getNameServerAddr(),
             basicConfig.getAccessKey(),
@@ -191,6 +197,6 @@ public class ConsumerMaster {
         aliveConsumerWorkers.put(consumerName, thread);
         aliveConsumerConfigs.put(consumerName, currentConsumerConfig);
         thread.start();
-        log.info("消费线程{}启动", consumerName);
+        log.info("消费线程{}启动,消费者配置为:\n{}", consumerName, JSONUtil.toJsonPrettyStr(currentConsumerConfig));
     }
 }
