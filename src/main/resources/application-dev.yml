@@ -15,7 +15,10 @@ spring:
     validation-query: SELECT 1
     test-on-borrow: true
     test-while-idle: true
-    time-between-eviction-runs-millis: 3600000
+    time-between-eviction-runs-millis: 10000
+    hikari:
+      minimum-idle: 10
+      maximum-pool-size: 10
 
 mybatis-plus:
   mapper-locations: classpath:/com/wwstation/messagecenter/model/mapper/*.xml
