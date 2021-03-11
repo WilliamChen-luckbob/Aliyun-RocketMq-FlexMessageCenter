@@ -49,6 +49,7 @@ public class ProducerMaster {
             try {
                 run();
             } catch (Exception e) {
+                log.error("producer master遭遇异常，已经关闭");
                 e.printStackTrace();
             }
         }, "producerMaster").start();
