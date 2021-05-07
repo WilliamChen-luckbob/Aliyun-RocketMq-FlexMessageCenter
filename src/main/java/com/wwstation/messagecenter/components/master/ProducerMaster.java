@@ -2,18 +2,28 @@ package com.wwstation.messagecenter.components.master;
 
 import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.json.JSONUtil;
+import com.alibaba.fastjson.JSONObject;
 import com.aliyun.mq.http.MQClient;
 import com.aliyun.mq.http.MQProducer;
+import com.aliyun.mq.http.model.AsyncCallback;
+import com.aliyun.mq.http.model.AsyncResult;
 import com.aliyun.mq.http.model.TopicMessage;
 import com.wwstation.messagecenter.components.config.MessageConfig;
+import com.wwstation.messagecenter.exceptions.Asserts;
 import com.wwstation.messagecenter.model.bo.ProducerConfig;
 import com.wwstation.messagecenter.model.po.BasicConfig;
 import com.wwstation.messagecenter.model.po.ConsumerConfig;
+import com.wwstation.messagecenter.utils.Http.HttpBean;
+import com.wwstation.messagecenter.utils.Http.HttpUtils4LoadBalancer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.SerializationUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
 import javax.annotation.PostConstruct;
 import java.util.ArrayList;
@@ -32,12 +42,24 @@ import java.util.stream.Collectors;
  * @Date: 2021-03-05 14:50
  */
 @Component
+@AutoConfigureAfter(value = MessageConfig.class)
 @Slf4j
 public class ProducerMaster {
     @Autowired
-    MessageConfig config;
+    private MessageConfig config;
+    @Autowired
+    private HttpUtils4LoadBalancer httpUtil;
+    @Autowired
+    @Qualifier(value = "BalancedRestTemplate")
+    private RestTemplate balancedRestTemplate;
+    @Autowired
+    @Qualifier(value = "RestTemplate")
+    private RestTemplate restTemplate;
 
-    private Map<String, MQProducer> aliveProducer;
+    public static Map<String, MQProducer> aliveProducer;
+
+    private static final Long waiting4BasicConfigInterval = 5L;
+    private static final Long heartBeatInterval = 5L;
 
     @PostConstruct
     public void initialize() throws Exception {
@@ -61,7 +83,7 @@ public class ProducerMaster {
         //todo 多基础配置的设定暂时不考虑
         while (basicConfig == null) {
             log.error("正在等待获取基础配置");
-            TimeUnit.SECONDS.sleep(5);
+            TimeUnit.SECONDS.sleep(waiting4BasicConfigInterval);
             basicConfig = config.getBasicConfig();
         }
         MQClient mqClient = new MQClient(basicConfig.getNameServerAddr(),
@@ -101,10 +123,112 @@ public class ProducerMaster {
                 e.printStackTrace();
             } finally {
                 //轮询间隔
-                TimeUnit.SECONDS.sleep(5);
+                TimeUnit.SECONDS.sleep(heartBeatInterval);
             }
         }
 
+    }
+
+    public String asyncSend(String consumerName, String key, String dataJson) throws Exception {
+        Map<String, ConsumerConfig> consumerConfigs = config.getConsumerConfig();
+        ConsumerConfig consumerConfig = consumerConfigs.get(consumerName);
+
+        if (consumerConfig == null) {
+            Asserts.fail(String.format("当前消息中心配置中没有找到命名为%s的生产消费配置信息！请检查！", consumerName));
+        }
+
+        String topic = consumerConfig.getTopic();
+        String instanceId = consumerConfig.getInstanceId();
+        String tag = consumerConfig.getTag();
+        String producerName = topic + "+" + instanceId;
+
+        TopicMessage msg = new TopicMessage();
+        if (StringUtils.isNotEmpty(key)) {
+            msg.setMessageKey(key);
+        }
+        if (StringUtils.isNotEmpty(tag)) {
+            msg.setMessageTag(tag);
+        }
+
+        msg.setMessageBody(dataJson);
+        JSONObject result = new JSONObject();
+        try {
+            MQProducer producer = aliveProducer.get(producerName);
+            AsyncResult<TopicMessage> asyncResult = producer.asyncPublishMessage(msg, new AsyncCallback<TopicMessage>() {
+                //生产成功时调用配置中的回调接口
+                @Override
+                public void onSuccess(TopicMessage result) {
+                    HttpBean httpBean = new HttpBean();
+                    httpBean.setMethod(HttpMethod.POST);
+                    httpBean.setUrl(consumerConfig.getIsInnerProcessor() ?
+                        consumerConfig.getModuleName() + consumerConfig.getAsyncCallbackHandlerOnSucceed() :
+                        consumerConfig.getAsyncCallbackHandlerOnSucceed());
+                    JSONObject body = new JSONObject();
+                    body.put("messageId",result.getMessageId());
+                    httpBean.setBody(body);
+                    try {
+                        JSONObject execute;
+                        if (consumerConfig.getIsInnerProcessor()) {
+                            execute = httpUtil.execute(balancedRestTemplate, httpBean);
+                        } else {
+                            execute = httpUtil.execute(restTemplate, httpBean);
+                        }
+                        if (execute.getString("status").equals("200")) {
+                            log.info("消息id={}回调成功", result.getMessageId());
+                        } else {
+                            log.error("消息id={},内容={},回调失败，原因={}", result.getMessageId(), body.toJSONString(), execute.getString("note"));
+                        }
+                    } catch (Exception exception) {
+                        log.error("消息id=" + result.getMessageId() + ",内容=" + body.toJSONString() + ",回调失败", exception);
+                    }
+                }
+
+                @Override
+                public void onFail(Exception ex) {
+                    log.error("消息异步发送失败", ex);
+                    HttpBean httpBean = new HttpBean();
+                    httpBean.setMethod(HttpMethod.POST);
+                    httpBean.setUrl(consumerConfig.getIsInnerProcessor() ?
+                        consumerConfig.getModuleName() + consumerConfig.getAsyncCallbackHandlerOnSucceed() :
+                        consumerConfig.getAsyncCallbackHandlerOnSucceed());
+                    JSONObject body = new JSONObject();
+                    body.put("message", "消息堆栈请查看消息中心日志，异常提示：" + ex.getMessage());
+                    httpBean.setBody(body);
+                    try {
+                        JSONObject execute;
+                        if (consumerConfig.getIsInnerProcessor()) {
+                            execute = httpUtil.execute(balancedRestTemplate, httpBean);
+                        } else {
+                            execute = httpUtil.execute(restTemplate, httpBean);
+                        }
+                        if (execute.getString("status").equals("200")) {
+                            log.info("异常消息回调成功");
+                        } else {
+                            log.error("消息生产和回调均失败");
+                        }
+                    } catch (Exception exception) {
+                        log.error("消息生产和回调均失败", exception);
+                    }
+                }
+            });
+
+            log.info("异步消息已推送!");
+
+            result.put("status", 200);
+            result.put("messageId", "异步消息已推送");
+        } catch (
+            Exception e) {
+            e.printStackTrace();
+            log.error(String.format(
+                "消息发送失败：未知错误！topic=%s，tag=%s，key=%s，result=%s",
+                topic,
+                tag,
+                key,
+                dataJson));
+            result.put("status", 500);
+            result.put("messageId", "");
+        }
+        return result.toJSONString();
     }
 
     /**
@@ -113,7 +237,7 @@ public class ProducerMaster {
      * @param consumerName 期望发送并被哪组接收
      * @return
      */
-    public boolean send(String consumerName, String key, String dataJson) throws Exception {
+    public String send(String consumerName, String key, String dataJson) throws Exception {
         Map<String, ConsumerConfig> consumerConfigs = config.getConsumerConfig();
         ConsumerConfig consumerConfig = consumerConfigs.get(consumerName);
 
@@ -131,14 +255,17 @@ public class ProducerMaster {
         }
 
         msg.setMessageBody(dataJson);
-
+        JSONObject result = new JSONObject();
         try {
             MQProducer producer = aliveProducer.get(producerName);
+
             TopicMessage topicMessage = producer.publishMessage(msg);
             log.info("消息发送成功！messageId={},messagebody={}",
                 topicMessage.getMessageId(),
                 topicMessage.getMessageBodyString());
-            return true;
+
+            result.put("status",200);
+            result.put("messageId",topicMessage.getMessageId());
         } catch (Exception e) {
             e.printStackTrace();
             log.error(String.format(
@@ -147,7 +274,9 @@ public class ProducerMaster {
                 tag,
                 key,
                 dataJson));
+            result.put("status",500);
+            result.put("messageId","");
         }
-        return false;
+        return result.toJSONString();
     }
 }

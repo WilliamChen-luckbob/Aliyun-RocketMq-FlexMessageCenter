@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="60 seconds">
+
+    <!-- magenta:洋红 -->
+    <!-- boldMagenta:粗红-->
+    <!-- cyan:青色 -->
+    <!-- white:白色 -->
+    <!-- magenta:洋红 -->
+    <springProperty scope="context" name="logPath" source="logging.config.root-path" defaultValue="./logs"/>
+    <springProperty scope="context" name="applicationName" source="spring.application.name" defaultValue=""/>
+
+    <property name="APPLICATION_NAME" value="${applicationName}"/>
+    <property name="LOG_PATH" value="${logPath}"/>
+    <property name="COLORED_CONSOLE_PATTERN"
+              value="%white(%date{yyyy-MM-dd HH:mm:ss.SSS}) [app:${applicationName},%yellow(traceId:%X{X-B3-TraceId}),%green(spanId:%X{X-B3-SpanId}),%blue(parentId:%X{X-B3-ParentSpanId})] [%yellow(%thread)] %highlight(%-5level) | %white(%file:%line) | %green(%logger{36}) | %cyan(%msg%n)"/>
+    <property name="CONSOLE_PATTERN"
+              value="%date{yyyy-MM-dd HH:mm:ss.SSS} [app:${applicationName},traceId:%X{X-B3-TraceId},spanId:%X{X-B3-SpanId},parentId:%X{X-B3-ParentSpanId}] [%thread] %-5level | %file:%line | %logger{36} | %msg%n"/>
+
+    <!--写入日志到控制台的appender,用默认的,但是要去掉charset,否则windows下tomcat下乱码-->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${COLORED_CONSOLE_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!--将普通日志输出到指定的文件-->
+    <appender name="file"
+              class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/${APPLICATION_NAME}.%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <encoder>
+            <pattern>
+                <!--%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n-->
+                ${COLORED_CONSOLE_PATTERN}
+            </pattern>
+        </encoder>
+    </appender>
+
+    <appender name="uncolored-file"
+              class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/${APPLICATION_NAME}.file.%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <encoder>
+            <pattern>
+                <!--%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n-->
+                ${CONSOLE_PATTERN}
+            </pattern>
+        </encoder>
+    </appender>
+    <appender name="errorFile"
+              class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/${APPLICATION_NAME}Error.%d{yyyy-MM-dd}.log</fileNamePattern>
+        </rollingPolicy>
+        <encoder>
+            <pattern>
+                <!--%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n-->
+                ${COLORED_CONSOLE_PATTERN}
+            </pattern>
+        </encoder>
+        <!--只接受error日志-->
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+            <level>ERROR</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
+        </filter>
+    </appender>
+
+
+    <springProfile name="dev">
+        <property name="LOG_PATH" value="/code/data/logs"/>
+        <logger name="com.wwstation" level="debug"/>
+        <root level="info">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+    <springProfile name="test">
+        <root level="info">
+            <appender-ref ref="uncolored-file"/>
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="errorFile"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <root level="info">
+            <appender-ref ref="uncolored-file"/>
+        </root>
+    </springProfile>
+
+</configuration>

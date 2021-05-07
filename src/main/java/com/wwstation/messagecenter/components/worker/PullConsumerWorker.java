@@ -7,14 +7,15 @@ import com.aliyun.mq.http.MQClient;
 import com.aliyun.mq.http.MQConsumer;
 import com.aliyun.mq.http.common.AckMessageException;
 import com.aliyun.mq.http.model.Message;
-import com.wwstation.messagecenter.model.bo.HttpBean;
+import com.wwstation.messagecenter.exceptions.GlobalApiException;
 import com.wwstation.messagecenter.model.po.ConsumerConfig;
 import com.wwstation.messagecenter.model.po.FailedMessage;
 import com.wwstation.messagecenter.service.MPFailedMessageService;
-import com.wwstation.messagecenter.utils.FeedBackUtils;
-import com.wwstation.messagecenter.utils.HttpUtils;
+import com.wwstation.messagecenter.utils.FeignUtils;
+import com.wwstation.messagecenter.utils.Http.HttpBean;
+import com.wwstation.messagecenter.utils.Http.HttpUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cloud.openfeign.support.FeignUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.HttpMethod;
 import org.springframework.web.client.RestTemplate;
 
@@ -34,7 +35,7 @@ import java.util.concurrent.TimeUnit;
  * @Date: 2021-03-05 10:41
  */
 @Slf4j
-public class ConsumerWorker implements Runnable {
+public class PullConsumerWorker implements Runnable {
     private RestTemplate restTemplate;
     private HttpUtils httpUtil;
     private MQClient mqClient;
@@ -49,11 +50,11 @@ public class ConsumerWorker implements Runnable {
     private MPFailedMessageService failedMessageService;
     private ConsumerConfig config;
 
-    public ConsumerWorker(HttpUtils httpUtil,
-                          RestTemplate restTemplate,
-                          MQClient mqClient,
-                          ConsumerConfig config,
-                          MPFailedMessageService failedMessageService) {
+    public PullConsumerWorker(HttpUtils httpUtil,
+                              RestTemplate restTemplate,
+                              MQClient mqClient,
+                              ConsumerConfig config,
+                              MPFailedMessageService failedMessageService) {
         this.restTemplate = restTemplate;
         this.httpUtil = httpUtil;
         this.mqClient = mqClient;
@@ -96,7 +97,7 @@ public class ConsumerWorker implements Runnable {
                 // 长轮询消费消息
                 // 长轮询表示如果topic没有消息则请求会在服务端挂住3s，3s内如果有消息可以消费则立即返回
                 messages = consumer.consumeMessage(
-                    3,// 一次最多消费3条(最多可设置为16条)
+                    5,// 一次最多消费3条(最多可设置为16条)
                     3// 长轮询时间3秒（最多可设置为30秒）
                 );
             } catch (Throwable e) {
@@ -131,18 +132,30 @@ public class ConsumerWorker implements Runnable {
                     HttpBean httpBean = new HttpBean();
                     httpBean.setMethod(HttpMethod.POST);
                     httpBean.setUrl(isInnerProcessor ? moduleName + url : url);
-                    httpBean.setBody(JSONObject.parseObject(body));
+                    JSONObject body2Send = JSONObject.parseObject(body);
 
-                    JSONObject execute = httpUtil.execute(restTemplate, httpBean);
+                    //如果是异步发送的消息，需要在消费时告知消费者当前messageID
+                    if (StringUtils.isNotEmpty(config.getAsyncCallbackHandlerOnSucceed())) {
+                        body2Send.put("messageId", message.getMessageId());
+                    }
+                    httpBean.setBody(body2Send);
+
+                    //发送请求
+                    JSONObject execute = execute = httpUtil.execute(restTemplate, httpBean);
 
                     if (execute.getString("status").equals("200")) {
                         log.info("消息 id={} 消费成功", message.getMessageId());
+                    } else {
+                        if (execute != null) {
+                            throw new GlobalApiException(execute.getString("note"));
+                        }
+                        throw new GlobalApiException("消费时发生未知异常！");
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
                     log.error("{}消费者消费失败，消息ID={}", threadName, message.getMessageId());
                     log.error("当前请求的服务接口为{}{}", moduleName, url);
-                    log.error(FeedBackUtils.getResultFromError(e.getLocalizedMessage()));
+                    log.error(FeignUtils.getResultFromRestTemplateRequestError(e.getLocalizedMessage()));
                     log.info(JSONObject.toJSONString(message));
 
                     LocalDateTime now = LocalDateTime.now();
@@ -174,7 +187,7 @@ public class ConsumerWorker implements Runnable {
                         if (errors.getErrorMessages() != null) {
                             for (String errorHandle : errors.getErrorMessages().keySet()) {
                                 System.out.println("Handle:" + errorHandle + ", ErrorCode:" + errors.getErrorMessages().get(errorHandle).getErrorCode()
-                                    + ", ErrorMsg:" + errors.getErrorMessages().get(errorHandle).getErrorMessage());
+                                        + ", ErrorMsg:" + errors.getErrorMessages().get(errorHandle).getErrorMessage());
                             }
                         }
                         continue;

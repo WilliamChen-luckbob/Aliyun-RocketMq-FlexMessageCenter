@@ -1,10 +1,12 @@
-package com.wwstation.messagecenter.utils;
+package com.wwstation.messagecenter.utils.Http;
 
 import cn.hutool.core.collection.CollectionUtil;
 import com.alibaba.fastjson.JSONObject;
-
-import com.wwstation.messagecenter.model.bo.HttpBean;
-import org.springframework.http.*;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -12,6 +14,7 @@ import java.util.Map;
 import java.util.StringJoiner;
 
 /**
+ * 使用负载均衡的内部服务动态调用
  * @author william
  * @description
  * @Date: 2021-03-07 11:02

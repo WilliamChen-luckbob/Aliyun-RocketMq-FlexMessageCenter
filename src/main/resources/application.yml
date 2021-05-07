@@ -1,3 +1,74 @@
+server:
+  port: ${my-config.server.port}
+
+eureka:
+  instance:
+    lease-renewal-interval-in-seconds: ${my-config.eureka.instance.heartbeatInterval}
+    lease-expiration-duration-in-seconds: ${my-config.eureka.instance.deadInterval}
+  client:
+    service-url:
+      #      defaultZone: http://${spring.security.user.name}:${spring.security.user.password}@${my-config.eureka.instance.hostname}:8000/eureka/
+      defaultZone: http://${my-config.eureka.instance.hostname}:8000/eureka/
+    registry-fetch-interval-seconds: ${my-config.eureka.client.fetchRegistryInterval}
+
+
 spring:
+  main:
+    allow-bean-definition-overriding: true
+  mvc:
+    servlet:
+      load-on-startup: 1 #破除懒加载
+  application:
+    name: web-message-center
   profiles:
     active: dev
+  security:
+    basic:
+      enabled: true
+    user:
+      name: eureka
+      password: aW5maWFpLXdlYi1zeXN0ZW0tZXVyZWthLWNlbnRlcg==
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${my-config.mysql.host}:${my-config.mysql.port}/${my-config.mysql.db-name}?characterEncoding=utf-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true&allowMultiQueries=true
+    username: ${my-config.mysql.username}
+    password: ${my-config.mysql.password}
+    validation-query: SELECT 1
+    test-on-borrow: true
+    test-while-idle: true
+    time-between-eviction-runs-millis:  10000
+    hikari:
+      minimum-idle: 1
+      maximum-pool-size: 10
+  flyway:
+    url: ${spring.datasource.url}
+    schemas: ${my-config.mysql.db-name}
+    user: ${my-config.mysql.username}
+    password: ${my-config.mysql.password}
+    baseline-on-migrate: true
+  redis:
+    host: ${my-config.redis.host}
+    port: ${my-config.redis.port}
+    password: ${my-config.redis.password}
+    lettuce:
+      pool:
+        max-idle: 30
+        max-active: 15
+        max-wait: 2000
+        min-idle: 0
+  sleuth:
+    redis:
+      enabled: false
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+swagger:
+  enable: ${my-config.swagger.enabled}
+  application-name: ${spring.application.name}
+  application-version: 1.0
+  application-description: 消息中心
+  host: http://localhost:${server.port}
+
+logging:
+  config:
+    root-path: ${my-config.logging.config.root-path}

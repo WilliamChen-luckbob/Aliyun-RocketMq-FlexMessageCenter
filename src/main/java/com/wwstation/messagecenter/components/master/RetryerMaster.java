@@ -4,7 +4,8 @@ import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.thread.RejectPolicy;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.wwstation.messagecenter.model.bo.HttpBean;
+import com.wwstation.messagecenter.components.config.ConsumeTypeEnum;
+import com.wwstation.messagecenter.components.config.MessageConfig;
 import com.wwstation.messagecenter.model.po.ConsumerConfig;
 import com.wwstation.messagecenter.model.po.DeadMessage;
 import com.wwstation.messagecenter.model.po.FailedMessage;
@@ -12,13 +13,19 @@ import com.wwstation.messagecenter.service.MPConsumerConfigService;
 import com.wwstation.messagecenter.service.MPDeadMessageService;
 import com.wwstation.messagecenter.service.MPFailedMessageService;
 
-import com.wwstation.messagecenter.utils.HttpUtils4LoadBalancer;
+import com.wwstation.messagecenter.utils.Http.HttpBean;
+import com.wwstation.messagecenter.utils.Http.HttpUtils4LoadBalancer;
 import com.zaxxer.hikari.util.UtilityElf;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections.map.HashedMap;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.SerializationUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +35,7 @@ import javax.annotation.PostConstruct;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -44,6 +52,7 @@ import java.util.stream.Collectors;
  * @Date: 2021-03-08 10:00
  */
 @Component
+@AutoConfigureAfter(value = MessageConfig.class)
 @Slf4j
 public class RetryerMaster {
     @Autowired
@@ -62,6 +71,8 @@ public class RetryerMaster {
     private RestTemplate restTemplate;
     @Autowired
     DiscoveryClient discoveryClient;
+
+    private static final Long interval = 10L;
 
     private volatile AtomicBoolean inProcessing;
     private ThreadPoolExecutor retryerPool;
@@ -95,9 +106,22 @@ public class RetryerMaster {
             try {
                 masterProcess();
             } catch (Exception e) {
-                e.printStackTrace();
+                if (
+                    (SQLException.class.isAssignableFrom(e.getClass()) ||
+                        DataAccessException.class.isAssignableFrom(e.getClass())
+                    ) &&
+                        (e.getMessage().contains("Unknown database") ||
+                            e.getMessage().contains("doesn't exist") ||
+                            e.getMessage().contains("Exception during pool initialization")
+                        )
+                ) {
+                    log.error("未初始化表结构，等待程序自动创建表结构...");
+                } else {
+                    log.error(e.getMessage());
+                    e.printStackTrace();
+                }
             } finally {
-                TimeUnit.SECONDS.sleep(5);
+                TimeUnit.SECONDS.sleep(interval);
                 //正常情况下处理不会出问题，如果抛出异常，那么
                 inProcessing.set(false);
             }
@@ -122,7 +146,7 @@ public class RetryerMaster {
                 k -> k.getId(),
                 v -> v));
         if (CollectionUtil.isEmpty(failedMessageMap)) {
-            TimeUnit.SECONDS.sleep(5);
+            log.debug("没有需要重试的数据");
             return;
         }
         //k=消费者配置ID v=消费者实例明细
@@ -160,11 +184,32 @@ public class RetryerMaster {
             }
 
             //注册中心有实例且配置等信息无问题的消息，才可以尝试创建线程进行消费重试
-            RetryerWorker retryerWorker = new RetryerWorker(
-                failedMessage.getCreateTime(),
-                failedMessage,
-                consumerConfig);
-            FutureTask<Integer> futureTask = new FutureTask(retryerWorker);
+            FutureTask<Integer> futureTask = null;
+            if (ConsumeTypeEnum.typeMatch(consumerConfig.getConsumeType(), ConsumeTypeEnum.BROADCAST)) {
+                BroadCastRetryerWorker broadCastRetryerWorker = new BroadCastRetryerWorker(failedMessage.getCreateTime(),
+                    failedMessage,
+                    consumerConfig,
+                    restTemplate,
+                    discoveryClient,
+                    retryerPool);
+                futureTask = new FutureTask<>(broadCastRetryerWorker);
+            } else if (ConsumeTypeEnum.typeMatch(consumerConfig.getConsumeType(), ConsumeTypeEnum.PULL)) {
+                RetryerWorker retryerWorker = new RetryerWorker(
+                    failedMessage.getCreateTime(),
+                    failedMessage,
+                    consumerConfig);
+                futureTask = new FutureTask(retryerWorker);
+            } else if (ConsumeTypeEnum.typeMatch(consumerConfig.getConsumeType(), ConsumeTypeEnum.DEFAULT)) {
+                RetryerWorker retryerWorker = new RetryerWorker(
+                    failedMessage.getCreateTime(),
+                    failedMessage,
+                    consumerConfig);
+                futureTask = new FutureTask(retryerWorker);
+            } else {
+                log.error("不支持的消费类型{}！消费失败！", consumerConfig.getConsumeType());
+            }
+
+
             //本次循环的消息内容
             workerMap.put(failedMessage.getId(), futureTask);
             retryerPool.submit(futureTask);
@@ -279,8 +324,11 @@ public class RetryerMaster {
                 HttpBean httpBean = new HttpBean();
                 httpBean.setMethod(HttpMethod.POST);
                 httpBean.setUrl(isInnerProcessor ? moduleName + url : url);
-                httpBean.setBody(JSONObject.parseObject(body));
-
+                JSONObject body2Send = JSONObject.parseObject(body);
+                if (StringUtils.isNotEmpty(consumerConfig.getAsyncCallbackHandlerOnSucceed())){
+                    body2Send.put("messageId",messageId);
+                }
+                httpBean.setBody(body2Send);
                 JSONObject execute = null;
                 execute = httpUtil.execute(
                     isInnerProcessor ? balancedRestTemplate : restTemplate,
@@ -289,10 +337,129 @@ public class RetryerMaster {
                     log.info("消息 id={} 重新消费成功", messageId);
                     return 1;
                 }
+                log.error("messageID={} 再次消费失败"+ execute.toJSONString() +"，期待重试", messageId);
                 return 2;
             } catch (Exception e) {
                 e.printStackTrace();
-                log.error("messageID={} 再次消费失败，期待重试", messageId);
+                log.error("messageID=" + messageId + " 再次消费失败，期待重试", e);
+                return 2;
+            } finally {
+                countDownLatch.countDown();
+            }
+        }
+    }
+
+    /**
+     * 广播模式执行实际重试动作的内部类（方便共享主线程变量）
+     */
+    public class BroadCastRetryerWorker implements Callable<Integer> {
+        //响应 0-现在不能重试
+        //响应 1-重试成功
+        //响应 2-重试失败
+
+        private LocalDateTime createTime;
+        private FailedMessage failedMessage;
+        private ConsumerConfig consumerConfig;
+        private Boolean isInnerProcessor;
+        private String moduleName;
+        private String url;
+        private String messageId;
+        private String body;
+        private RestTemplate restTemplate;
+        private DiscoveryClient discoveryClient;
+        private Executor executor;
+
+        public BroadCastRetryerWorker(LocalDateTime createTime,
+                                      FailedMessage failedMessage,
+                                      ConsumerConfig consumerConfig,
+                                      RestTemplate restTemplate,
+                                      DiscoveryClient discoveryClient,
+                                      Executor executor) {
+            this.createTime = createTime;
+            this.failedMessage = failedMessage;
+            this.consumerConfig = consumerConfig;
+            this.isInnerProcessor = consumerConfig.getIsInnerProcessor();
+            this.moduleName = consumerConfig.getModuleName();
+            this.url = consumerConfig.getProcessUrl();
+            this.messageId = failedMessage.getMqId();
+            this.body = failedMessage.getMessage();
+            this.restTemplate = restTemplate;
+            this.discoveryClient = discoveryClient;
+            this.executor = executor;
+        }
+
+        @Override
+        public Integer call() throws Exception {
+            try {
+                //发送请求,需要先从注册中心获取目标服务的所有实例，并尝试异步发送并获取结果
+                //至少有一个响应成功，视为成功
+                List<ServiceInstance> availableInstances = discoveryClient.getInstances(moduleName);
+                Integer count = availableInstances.size();
+                CountDownLatch countDownLatch = new CountDownLatch(count);
+                log.info("正在向存活的服务实例进行消息广播...");
+
+//                    redisUtils.set(String.format(Constants.BROADCAST_ACK_NUM,message.getMessageId()),count);
+                Map<String, FutureTask<JSONObject>> futureTasks = new HashMap<>();
+                for (ServiceInstance instance : availableInstances) {
+                    //这里注意httpBean在异步时可能会导致两个线程引用时使用了相同的url的并发问题，此处最好进行新实例化对象
+                    HttpBean httpBean = new HttpBean();
+                    httpBean.setMethod(HttpMethod.POST);
+                    httpBean.setBody(JSONObject.parseObject(body));
+                    httpBean.setUrl(instance.getUri().toString() + url);
+                    HttpBean clone = SerializationUtils.clone(httpBean);
+                    FutureTask<JSONObject> futureTask = new FutureTask<>(new Callable<JSONObject>() {
+                        @Override
+                        public JSONObject call() throws Exception {
+                            try {
+                                log.info("正在向{}发送消费数据...", clone.getUrl());
+                                return httpUtil.execute(restTemplate, clone);
+                            } catch (Exception exception) {
+                                throw exception;
+                            } finally {
+                                countDownLatch.countDown();
+                            }
+                        }
+                    });
+                    futureTasks.put(instance.getUri().toString(), futureTask);
+                    executor.execute(futureTask);
+                }
+                countDownLatch.await();
+
+
+                //等待所有异步线程执行完毕，判定有多少成功的数据
+                Long succeedCount = futureTasks.entrySet().stream().filter(e -> {
+                    JSONObject result = null;
+                    String moduleInstance = e.getKey();
+                    try {
+                        //尝试获取result
+                        result = e.getValue().get();
+                        String status = result.getString("status");
+                        if (status == null) {
+                            throw new NullPointerException("status 为null！");
+                        } else {
+                            if (!status.equals("200")) {
+                                log.error("实例{}响应失败，内容为：{}", moduleInstance, result.toJSONString());
+                            } else {
+                                return true;
+                            }
+                        }
+                    } catch (Exception ex) {
+                        //如果callable中出现异常，在此进行日志打印
+                        log.error(String.format("调用实例%s出现异常，异常内容为：%s，", moduleInstance, ex.getMessage()), e);
+                    }
+                    return false;
+                }).count();
+
+                if (succeedCount > 0) {
+                    log.info("消息 id={} 广播消费成功", messageId);
+                    return 1;
+                } else {
+                    log.error("messageID={} 再次消费失败，期待重试", messageId);
+                    return 2;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                log.error("messageID=" + messageId + " 再次消费失败，期待重试", e);
                 return 2;
             } finally {
                 countDownLatch.countDown();

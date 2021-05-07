@@ -1,13 +1,12 @@
-package com.wwstation.messagecenter.utils;
+package com.wwstation.messagecenter.utils.Http;
 
 import com.alibaba.fastjson.JSONObject;
-import com.wwstation.messagecenter.model.bo.HttpBean;
 import org.springframework.web.client.RestTemplate;
 
 /**
  * @author william
  * @description
- * @Date: 2021-03-07 18:51
+ * @Date: 2021-02-02 18:31
  */
 public interface HttpUtils {
     /**

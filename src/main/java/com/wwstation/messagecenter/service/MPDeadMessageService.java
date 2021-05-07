@@ -1,7 +1,7 @@
 package com.wwstation.messagecenter.service;
 
-import com.wwstation.messagecenter.model.po.DeadMessage;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.wwstation.messagecenter.model.po.DeadMessage;
 
 /**
  * <p>

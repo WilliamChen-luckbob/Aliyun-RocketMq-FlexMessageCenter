@@ -1,9 +1,9 @@
 package com.wwstation.messagecenter.service.impl;
 
-import com.wwstation.messagecenter.model.po.ConsumerConfig;
-import com.wwstation.messagecenter.mapper.ConsumerConfigMapper;
-import com.wwstation.messagecenter.service.MPConsumerConfigService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.wwstation.messagecenter.mapper.ConsumerConfigMapper;
+import com.wwstation.messagecenter.model.po.ConsumerConfig;
+import com.wwstation.messagecenter.service.MPConsumerConfigService;
 import org.springframework.stereotype.Service;
 
 /**

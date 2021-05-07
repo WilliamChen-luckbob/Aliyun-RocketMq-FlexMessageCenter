@@ -1,9 +1,10 @@
-package com.wwstation.messagecenter.model.bo;
+package com.wwstation.messagecenter.utils.Http;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.springframework.http.HttpMethod;
 
+import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -14,7 +15,7 @@ import java.util.Map;
  */
 @Data
 @AllArgsConstructor
-public class HttpBean {
+public class HttpBean implements Serializable {
     private String url;
     private HttpMethod method;
     private Map<String, String> headers;

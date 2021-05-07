@@ -1,5 +1,6 @@
 package com.wwstation.messagecenter.components.config;
 
+import cn.hutool.core.collection.CollectionUtil;
 import com.google.common.collect.Sets;
 import com.wwstation.messagecenter.model.bo.ProducerConfig;
 import com.wwstation.messagecenter.model.po.BasicConfig;
@@ -11,8 +12,11 @@ import org.apache.commons.collections.map.HashedMap;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
+import org.springframework.dao.DataAccessException;
 
 import javax.annotation.PostConstruct;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,11 +27,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 /**
+ * 根据https://github.com/spring-projects/spring-boot/issues/8649
+ * 只能使用DependsOn来指定在flyway后执行
  * @author william
  * @description
  * @Date: 2021-03-05 10:53
  */
 @Configuration
+//@DependsOn({"flyway", "flywayInitializer"})
 @Slf4j
 public class MessageConfig {
     @Autowired
@@ -52,6 +59,7 @@ public class MessageConfig {
         new Thread(() -> {
             refresh();
         }, "配置刷新线程").start();
+
     }
 
     /**
@@ -117,7 +125,12 @@ public class MessageConfig {
         this.consumerConfig.clear();
 
         try {
-            this.basicConfig=basicConfigService.list().get(0);
+            List<BasicConfig> newList = basicConfigService.list();
+            if (CollectionUtil.isEmpty(newList)){
+                log.error("没有找到对应的基础配置，请确定数据库是否已经启动并写入初始配置！");
+                return;
+            }
+            this.basicConfig= newList.get(0);
 
             List<ConsumerConfig> list = consumerConfigService.list();
             this.consumerConfig = list.stream().collect(Collectors.toMap(
@@ -153,7 +166,20 @@ public class MessageConfig {
                 });
             log.info("定时刷新配置完毕，配置已更新");
         } catch (Exception e) {
-            e.printStackTrace();
+            if (
+                (SQLException.class.isAssignableFrom(e.getClass()) ||
+                    DataAccessException.class.isAssignableFrom(e.getClass())
+                ) &&
+                    (e.getMessage().contains("Unknown database") ||
+                        e.getMessage().contains("doesn't exist") ||
+                        e.getMessage().contains("Exception during pool initialization")
+                    )
+            ) {
+                log.error("未初始化表结构，等待程序自动创建表结构...");
+            } else {
+                log.error(e.getMessage());
+                e.printStackTrace();
+            }
         } finally {
             inRefreshing.set(false);
         }

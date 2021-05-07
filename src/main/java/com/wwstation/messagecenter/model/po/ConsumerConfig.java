@@ -1,13 +1,14 @@
 package com.wwstation.messagecenter.model.po;
 
 import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.extension.activerecord.Model;
 import com.baomidou.mybatisplus.annotation.TableId;
-import java.io.Serializable;
+import com.baomidou.mybatisplus.extension.activerecord.Model;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+
+import java.io.Serializable;
 
 /**
  * <p>
@@ -51,6 +52,15 @@ public class ConsumerConfig extends Model<ConsumerConfig> {
 
       @ApiModelProperty(value = "是否是微服务间的内部调用1-内部调用 0-外部调用")
       private Boolean isInnerProcessor;
+
+    @ApiModelProperty(value = "消费方式（暂不支持广播）")
+    private String consumeType;
+
+    @ApiModelProperty(value = "异步回调成功处理接口")
+    private String asyncCallbackHandlerOnSucceed;
+
+    @ApiModelProperty(value = "异步回调失败处理接口")
+    private String asyncCallbackHandlerOnFailed;
 
 
     @Override
